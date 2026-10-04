@@ -64,12 +64,13 @@
 		crosshairSize: 1, fullbrightStrength: 'medium', fpsCorner: 'left', clearLagMinutes: 3, cullDistance: 0.5,
 		skins: {}, shader: false, shaderStyle: 'vibrant', glowOres: false, glint: false, glintColor: 'turquoise', cleanGlass: false,
 		noHurtTilt: false, noFovFx: false, noWobble: false, noLightning: false,
-		batterySaver: true, batteryCap: lowEnd ? 30 : 0
+		batterySaver: false, batteryCap: 30
 	};
 	var mods = readJSON(MODS_KEY) || {};
 	for (var mk in DEF_MODS) if (!(mk in mods)) mods[mk] = DEF_MODS[mk];
 	function saveMods() { writeJSON(MODS_KEY, mods); }
 	if ((mods._v || 0) < 3) { mods.fpsCorner = 'left'; mods._v = 3; saveMods(); } // FPS moved off the game's pop-up corner
+	if ((mods._v || 0) < 4) { mods.batterySaver = false; mods._v = 4; saveMods(); } // the 30 fps cap made the game feel laggy: opt-in only
 
 	// ------------------------------------------------------------ options file (gzip + base64 key:value lines)
 	function b64ToBytes(s) { var bin = atob(s), out = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; }
@@ -119,7 +120,7 @@
 			biomeBlendRadius: '0', entityDistanceScaling: '0.5', entityShadows: 'false', cutoutLeaves: 'false',
 			improvedTransparency: 'false', mipmapLevels: '0', textureFiltering: '0', renderClouds: '"false"',
 			weatherRadius: '3', vignette: 'false', chunkSectionFadeInTime: '0.0', menuBackgroundBlurriness: '0',
-			prioritizeChunkUpdates: '0', syncChunkWrites: 'false', graphicsPreset: '"custom"', inactivityFpsLimit: '"afk"'
+			prioritizeChunkUpdates: '0', syncChunkWrites: 'false', graphicsPreset: '"custom"', inactivityFpsLimit: '"minimized"'
 		},
 		balanced: {
 			renderDistance: '6', simulationDistance: '5', maxFps: '120', particles: '1', ao: 'true',
@@ -234,7 +235,8 @@
 				Object.assign(values, cfg.chromebook ? PRESETS.chromebook : PRESETS.balanced);
 				cfg.seeded = true; saveCfg();
 			}
-			if ((cfg._v || 0) < 5) { values.inactivityFpsLimit = '"afk"'; cfg._v = 5; saveCfg(); } // battery: slow down when idle
+			// v6: undo v5's AFK limit — it held some Chromebooks at 30 fps
+			if ((cfg._v || 0) < 6) { values.inactivityFpsLimit = '"minimized"'; cfg._v = 6; saveCfg(); }
 			var pending = readJSON(PENDING_KEY);
 			if (pending) Object.assign(values, pending);
 			values.toggleSprint = mods.toggleSprint ? 'true' : 'false';
@@ -874,7 +876,7 @@
 		] },
 		{ id: 'lag', name: 'Lag', groups: [
 			{ name: 'YOUR COMPUTER', items: [
-				modBool('batterySaver', 'Battery Saver', 'Menus run at 30 fps, and while your laptop is unplugged the game is capped lower so the battery lasts longer. Plugged in, the game runs at your normal Max Framerate.', { opts: [
+				modBool('batterySaver', 'Battery Saver', 'Saves battery but makes the game choppier: menus run at 30 fps, and while your laptop is unplugged the game is capped at 30 fps. Off by default.', { opts: [
 					opt('batteryCap', 'Unplugged Cap', [[30, '30 fps'], [0, 'No cap']], 'Highest framerate in the world while running on battery.')] }),
 				modBool('entityCull', 'Entity Culling', 'Far-away mobs and items are not drawn, and entity shadows are off. (The game already skips entities behind you; ones behind walls still draw, that part is inside the engine.) Takes a restart.', { restart: true, opts: [
 					opt('cullDistance', 'Draw Distance', [[0.25, 'Short'], [0.5, 'Medium'], [0.75, 'Long']], 'How far away entities are still drawn.', { restart: true })] })

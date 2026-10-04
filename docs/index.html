@@ -6,7 +6,7 @@
  */
 (function () {
 	'use strict';
-	var V = '6eadcbb6d36b';
+	var V = 'b963745753d6';
 	var IDS = ["eag-inline-wasm-br", "eag-inline-mesh-wasm-br", "eag-inline-server-wasm-br", "eag-inline-assets", "eag-inline-sounds"];
 	var CACHE = 'rise-payload-' + V;
 	var total = 54547350, done = 0;
@@ -337,7 +337,7 @@ vNCw0YbQuNGP0JjQvdGE0L7RgNC80LDRhtC40Y/QoNC10YHQv9GD0LHQu9C40LrQuNC60L7Qu9C40YfQ
   ], { type: "text/javascript" }));
   var serverAssetNode = document.getElementById("eag-inline-assets");
   window.__eaglerWasmServerWorkerBootstrapURL = URL.createObjectURL(new Blob([
-    "self.__riseAssetURL=self.__riseAssetURL||" + JSON.stringify(new URL("payload/eag-inline-assets.bin?v=6eadcbb6d36b", location.href).href) + ";\n",
+    "self.__riseAssetURL=self.__riseAssetURL||" + JSON.stringify(new URL("payload/eag-inline-assets.bin?v=b963745753d6", location.href).href) + ";\n",
     "(function () {\n  \"use strict\";\n  var originalFetch = self.fetch.bind(self);\n  var OriginalXHR = self.XMLHttpRequest;\n  var encoded = `",
     "",
     "`;\n  var assetBuffer = null;\n  function decodeAsset() {\n    if (assetBuffer) return assetBuffer;\n    if (self.__riseAssetURL) { var rx = new OriginalXHR(); rx.open('GET', self.__riseAssetURL, false); rx.responseType = 'arraybuffer'; rx.send(); if (rx.status !== 200) throw new Error('Rise: asset download failed ' + rx.status); assetBuffer = rx.response; encoded = ''; return assetBuffer; }\n    var size = 4814693;\n    var out = new Uint8Array(size);\n    var offset = 0;\n    var start = 0;\n    while (start < encoded.length) {\n      while (start < encoded.length && encoded.charCodeAt(start) <= 32) ++start;\n      if (start >= encoded.length) break;\n      var end = encoded.indexOf(\"\\n\", start);\n      if (end < 0) end = encoded.length;\n      while (end > start && encoded.charCodeAt(end - 1) <= 32) --end;\n      var binary = atob(encoded.slice(start, end));\n      for (var i = 0; i < binary.length; ++i) out[offset + i] = binary.charCodeAt(i);\n      offset += binary.length;\n      start = end + 1;\n    }\n    encoded = \"\";\n    if (offset !== size) throw new Error(\"inline server asset size mismatch\");\n    assetBuffer = out.buffer;\n    return assetBuffer;\n  }\n  self.fetch = function (input, init) {\n    var url = typeof input === \"string\" ? input : (input && input.url) || String(input);\n    if (url.indexOf(\"eagler-inline-payload://assets.epk\") !== 0) {\n      return originalFetch(input, init);\n    }\n    return Promise.resolve(new Response(decodeAsset(), {\n      status: 200,\n      headers: { \"Content-Type\": \"application/octet-stream\" }\n    }));\n  };\n  self.XMLHttpRequest = function () {\n    var delegate = null;\n    var listeners = Object.create(null);\n    var inline = false;\n    var url = \"\";\n    this.status = 0;\n    this.response = null;\n    this.responseType = \"\";\n    this.addEventListener = function (type, listener) {\n      listeners[type] = listener;\n      if (delegate) delegate.addEventListener(type, listener);\n    };\n    this.open = function (method, nextURL, async) {\n      url = String(nextURL);\n      inline = url.indexOf(\"eagler-inline-payload://assets.epk\") === 0;\n      if (!inline) {\n        delegate = new OriginalXHR();\n        delegate.responseType = this.responseType;\n        for (var type in listeners) delegate.addEventListener(type, listeners[type]);\n        delegate.open(method, nextURL, async);\n      }\n    };\n    this.send = function (body) {\n      if (!inline) {\n        delegate.responseType = this.responseType;\n        delegate.send(body);\n        return;\n      }\n      var selfXHR = this;\n      setTimeout(function () {\n        try {\n          selfXHR.status = 200;\n          selfXHR.response = decodeAsset();\n          if (listeners.load) listeners.load.call(selfXHR, { target: selfXHR });\n        } catch (ex) {\n          if (listeners.error) listeners.error.call(selfXHR, { target: selfXHR, error: ex });\n        }\n      }, 0);\n    };\n  };\n})();\n",
@@ -1008,12 +1008,13 @@ var TeaVM=TeaVM||{};TeaVM.wasmGC=TeaVM.wasmGC||(()=>{let n=new Map;let e=null;le
 		crosshairSize: 1, fullbrightStrength: 'medium', fpsCorner: 'left', clearLagMinutes: 3, cullDistance: 0.5,
 		skins: {}, shader: false, shaderStyle: 'vibrant', glowOres: false, glint: false, glintColor: 'turquoise', cleanGlass: false,
 		noHurtTilt: false, noFovFx: false, noWobble: false, noLightning: false,
-		batterySaver: true, batteryCap: lowEnd ? 30 : 0
+		batterySaver: false, batteryCap: 30
 	};
 	var mods = readJSON(MODS_KEY) || {};
 	for (var mk in DEF_MODS) if (!(mk in mods)) mods[mk] = DEF_MODS[mk];
 	function saveMods() { writeJSON(MODS_KEY, mods); }
 	if ((mods._v || 0) < 3) { mods.fpsCorner = 'left'; mods._v = 3; saveMods(); } // FPS moved off the game's pop-up corner
+	if ((mods._v || 0) < 4) { mods.batterySaver = false; mods._v = 4; saveMods(); } // the 30 fps cap made the game feel laggy: opt-in only
 
 	// ------------------------------------------------------------ options file (gzip + base64 key:value lines)
 	function b64ToBytes(s) { var bin = atob(s), out = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; }
@@ -1063,7 +1064,7 @@ var TeaVM=TeaVM||{};TeaVM.wasmGC=TeaVM.wasmGC||(()=>{let n=new Map;let e=null;le
 			biomeBlendRadius: '0', entityDistanceScaling: '0.5', entityShadows: 'false', cutoutLeaves: 'false',
 			improvedTransparency: 'false', mipmapLevels: '0', textureFiltering: '0', renderClouds: '"false"',
 			weatherRadius: '3', vignette: 'false', chunkSectionFadeInTime: '0.0', menuBackgroundBlurriness: '0',
-			prioritizeChunkUpdates: '0', syncChunkWrites: 'false', graphicsPreset: '"custom"', inactivityFpsLimit: '"afk"'
+			prioritizeChunkUpdates: '0', syncChunkWrites: 'false', graphicsPreset: '"custom"', inactivityFpsLimit: '"minimized"'
 		},
 		balanced: {
 			renderDistance: '6', simulationDistance: '5', maxFps: '120', particles: '1', ao: 'true',
@@ -1178,7 +1179,8 @@ var TeaVM=TeaVM||{};TeaVM.wasmGC=TeaVM.wasmGC||(()=>{let n=new Map;let e=null;le
 				Object.assign(values, cfg.chromebook ? PRESETS.chromebook : PRESETS.balanced);
 				cfg.seeded = true; saveCfg();
 			}
-			if ((cfg._v || 0) < 5) { values.inactivityFpsLimit = '"afk"'; cfg._v = 5; saveCfg(); } // battery: slow down when idle
+			// v6: undo v5's AFK limit — it held some Chromebooks at 30 fps
+			if ((cfg._v || 0) < 6) { values.inactivityFpsLimit = '"minimized"'; cfg._v = 6; saveCfg(); }
 			var pending = readJSON(PENDING_KEY);
 			if (pending) Object.assign(values, pending);
 			values.toggleSprint = mods.toggleSprint ? 'true' : 'false';
@@ -1818,7 +1820,7 @@ var TeaVM=TeaVM||{};TeaVM.wasmGC=TeaVM.wasmGC||(()=>{let n=new Map;let e=null;le
 		] },
 		{ id: 'lag', name: 'Lag', groups: [
 			{ name: 'YOUR COMPUTER', items: [
-				modBool('batterySaver', 'Battery Saver', 'Menus run at 30 fps, and while your laptop is unplugged the game is capped lower so the battery lasts longer. Plugged in, the game runs at your normal Max Framerate.', { opts: [
+				modBool('batterySaver', 'Battery Saver', 'Saves battery but makes the game choppier: menus run at 30 fps, and while your laptop is unplugged the game is capped at 30 fps. Off by default.', { opts: [
 					opt('batteryCap', 'Unplugged Cap', [[30, '30 fps'], [0, 'No cap']], 'Highest framerate in the world while running on battery.')] }),
 				modBool('entityCull', 'Entity Culling', 'Far-away mobs and items are not drawn, and entity shadows are off. (The game already skips entities behind you; ones behind walls still draw, that part is inside the engine.) Takes a restart.', { restart: true, opts: [
 					opt('cullDistance', 'Draw Distance', [[0.25, 'Short'], [0.5, 'Medium'], [0.75, 'Long']], 'How far away entities are still drawn.', { restart: true })] })
