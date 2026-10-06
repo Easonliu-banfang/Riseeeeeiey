@@ -4,3 +4,5 @@ ref/
 .venv/
 __pycache__/
 .DS_Store
+# downloaded by tools/gen_glyphs_zh.py (GNU Unifont hex, ~10 MB)
+.unifont-cache/

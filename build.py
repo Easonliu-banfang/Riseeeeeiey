@@ -36,12 +36,23 @@ def theme_files():
 LANG = {
     'credits_and_attribution.button.credits': 'Mods',
 }
+LANG_ZH = {
+    'credits_and_attribution.button.credits': '模组',
+}
 FAST_START = True  # swap 1562 recipe-unlock advancements for one that unlocks everything
 # Unifont covers every script (7.7 MB of hex) and the game parses it twice on each
 # start (default + uniform fonts). Keep Latin/Greek/Cyrillic, punctuation, symbols,
-# arrows, box drawing and full-width forms; other scripts show as boxes.
+# arrows, box drawing, full-width forms AND the CJK blocks: without them Chinese
+# renders as boxes, which is the whole point of the Chinese build. Scripts that are
+# still dropped (Arabic, Hebrew, Indic, ...) show as boxes.
+# CJK: radicals, punctuation, kana, bopomofo, strokes, enclosed forms, extension A,
+# unified ideographs, compatibility ideographs. tools/i18n_build.py imports this to
+# put the same blocks back into the already-built dist/ and docs/ payloads.
+CJK_RANGES = [(0x2E80, 0x2EFF), (0x3000, 0x303F), (0x3040, 0x30FF), (0x3100, 0x312F),
+              (0x31C0, 0x31EF), (0x3200, 0x33FF), (0x3400, 0x4DBF), (0x4E00, 0x9FFF),
+              (0xF900, 0xFAFF), (0xFE10, 0xFE4F)]
 UNIFONT_KEEP = [(0x0000, 0x0600), (0x1D00, 0x2C00), (0x2C60, 0x2C80), (0xA720, 0xA800),
-                (0xFB00, 0xFB50), (0xFE00, 0xFE70), (0xFF00, 0x10000)]
+                (0xFB00, 0xFB50), (0xFE00, 0xFE70), (0xFF00, 0x10000)] + CJK_RANGES
 
 
 def trim_unifont(zbytes):
@@ -77,9 +88,9 @@ def patch_assets(epk_bytes):
         if t == 'FILE' and n == 'assets/minecraft/font/unifont.zip':
             before = len(d); d = trim_unifont(d)
             print('unifont: %.1f MB -> %.2f MB' % (before / 1e6, len(d) / 1e6))
-        if t == 'FILE' and n == 'assets/minecraft/lang/en_us.json':
+        if t == 'FILE' and n in ('assets/minecraft/lang/en_us.json', 'assets/minecraft/lang/zh_cn.json'):
             lang = json.loads(d)
-            lang.update(LANG)
+            lang.update(LANG_ZH if n.endswith('zh_cn.json') else LANG)
             d = json.dumps(lang, ensure_ascii=False, indent=1).encode('utf-8')
         out.append((t, n, d))
     # NOTE: no .mcfunction files — datapack functions crash world loading in this port
@@ -122,7 +133,8 @@ def main():
     # 3. inject rise.js (with its build-time data) right before the (deferred) module boot script
     import json
     ex = os.path.join(ROOT, 'theme_extra')
-    rise = open(os.path.join(ROOT, 'src', 'rise.js'), encoding='utf-8').read()
+    rise = open(os.path.join(ROOT, 'src', 'i18n.js'), encoding='utf-8').read() + '\n' + \
+        open(os.path.join(ROOT, 'src', 'rise.js'), encoding='utf-8').read()
     bp = open(os.path.join(ROOT, '..', 'BlueprintMod', 'blueprint.js'), encoding='utf-8').read()
     a = 'btn.style.display = locked ? "none" : "";'
     assert a in bp
@@ -130,7 +142,8 @@ def main():
     a = '  function boot() {'
     assert a in bp
     bp = bp.replace(a, '  window.__blueprintMod.open = function () { panel.hidden = false; renderPanel(); };\n' + a)
-    rise = (rise.replace('%GLYPHS%', open(os.path.join(ex, 'glyphs.json')).read())
+    rise = (rise.replace('%GLYPHS_ZH%', open(os.path.join(ex, 'glyphs_zh.json')).read())
+                .replace('%GLYPHS%', open(os.path.join(ex, 'glyphs.json')).read())
                 .replace('%FONT%', base64.b64encode(open(os.path.join(ex, 'rise-font.ttf'), 'rb').read()).decode())
                 .replace('%PACKS%', open(os.path.join(ex, 'packs.json')).read())
                 .replace('%PREVIEWS%', open(os.path.join(ex, 'previews.json')).read())

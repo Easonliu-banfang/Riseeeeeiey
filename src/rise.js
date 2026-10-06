@@ -22,6 +22,8 @@
 	var MODS_KEY = 'rise.mods';
 	var PENDING_KEY = 'rise.pending';
 	var GLYPHS = %GLYPHS%;
+	var GLYPHS_ZH = %GLYPHS_ZH%;
+	var ZH_STRINGS = (typeof RISE_ZH === 'object' && RISE_ZH) || {};
 	var FONT_B64 = '%FONT%';
 	var PACKS = %PACKS%;
 	var BLUEPRINT_SRC = %BLUEPRINT%;
@@ -51,7 +53,7 @@
 	if (readJSON('rise.safe')) safeMode = true;
 	var nextFails = boot.pending ? (boot.fails || 0) + 1 : 0;
 	writeJSON(BOOT_KEY, { pending: true, fails: nextFails, at: Date.now(), safe: safeMode });
-	var DEF_CFG = { seeded: false, chromebook: lowEnd, scale: 1, hidpi: !lowEnd, dynamic: false, targetFps: 50, meshWorkers: 0, chunkCap: false };
+	var DEF_CFG = { seeded: false, chromebook: lowEnd, scale: 1, hidpi: !lowEnd, dynamic: false, targetFps: 50, meshWorkers: 0, chunkCap: false, lang: 'auto' };
 	var cfg = readJSON(CFG_KEY) || {};
 	for (var k in DEF_CFG) if (!(k in cfg)) cfg[k] = DEF_CFG[k];
 	if ((cfg._v || 0) < 4) { cfg.chunkCap = false; cfg._v = 4; writeJSON(CFG_KEY, cfg); } // debug flag: off by default now
@@ -71,6 +73,93 @@
 	function saveMods() { writeJSON(MODS_KEY, mods); }
 	if ((mods._v || 0) < 3) { mods.fpsCorner = 'left'; mods._v = 3; saveMods(); } // FPS moved off the game's pop-up corner
 	if ((mods._v || 0) < 4) { mods.batterySaver = false; mods._v = 4; saveMods(); } // the 30 fps cap made the game feel laggy: opt-in only
+
+	// ------------------------------------------------------------ language
+	// Two separate things:
+	//   gameLang — what language the GAME draws its menus in. The screen reader
+	//              matches the game's own text, so this picks the template set.
+	//   lang     — what language RISE's own panels use. cfg.lang 'auto' follows
+	//              gameLang, otherwise it is pinned to 'zh' or 'en'.
+	// gameLang is cached in localStorage because reading the game's options file
+	// is async (gzip) and this script has to build its UI synchronously.
+	var GAMELANG_KEY = 'rise.gamelang';
+	var SETLANG_KEY = 'rise.setlang';
+	var gameLang = readJSON(GAMELANG_KEY) === 'en' ? 'en' : 'zh'; // this build ships Chinese by default
+	var lang = 'zh';
+	var ICON_OF = {};
+	function isZh() { return lang === 'zh'; }
+	function pick(en) { return isZh() ? T(en) : en; }
+	function langOf(code) { return /^zh([-_]|$)/i.test(String(code || '')) ? 'zh' : 'en'; }
+	function resolveLang() {
+		lang = (cfg.lang === 'zh' || cfg.lang === 'en') ? cfg.lang : gameLang;
+	}
+	function T(s, a) {
+		if (s == null) return s;
+		var r = s;
+		if (isZh()) {
+			var v = ZH_STRINGS[s], m;
+			if (v != null) r = v;
+			else if ((m = /^([\d.]+) chunks$/.exec(s))) r = m[1] + ' 区块';
+			else if ((m = /^([\d.]+) fps$/.exec(s))) r = m[1] + ' 帧';
+			else if ((m = /^([\d.]+) blocks$/.exec(s))) r = m[1] + ' 方块';
+			else if ((m = /^([\d.]+)s$/.exec(s))) r = m[1] + ' 秒';
+		}
+		return a == null ? r : String(r).replace('{0}', a);
+	}
+	// Walks the panel definitions and swaps every label, group name, description,
+	// cycle value and button caption for its translation, keeping the English
+	// original under en_* so the language can be switched again later (and so
+	// anything missing from the dictionary just stays in English).
+	function localiseItems(items) {
+		items.forEach(function (it) {
+			if (it.label != null) { if (it.en_label === undefined) it.en_label = it.label; it.label = pick(it.en_label); }
+			if (it.desc != null) { if (it.en_desc === undefined) it.en_desc = it.desc; it.desc = pick(it.en_desc); }
+			if (it.impact != null) { if (it.en_impact === undefined) it.en_impact = it.impact; it.impact = pick(it.en_impact); }
+			if (it.values) {
+				if (it.en_values === undefined) it.en_values = it.values.map(function (v) { return v[1]; });
+				it.values = it.values.map(function (v, i) { return [v[0], pick(it.en_values[i])]; });
+			}
+			if (it.buttons) {
+				if (it.en_buttons === undefined) it.en_buttons = it.buttons.map(function (b) { return b[0]; });
+				it.buttons = it.buttons.map(function (b, i) { return [pick(it.en_buttons[i]), b[1]]; });
+			}
+			if (it.opts) localiseItems(it.opts);
+		});
+	}
+	// takes a list of panel definitions (e.g. [VIDEO, MODS])
+	function localiseDefs(lists) {
+		lists.forEach(function (defs) {
+			defs.forEach(function (p) {
+				if (p.en_name === undefined) p.en_name = p.name;
+				p.name = pick(p.en_name);
+				(p.groups || []).forEach(function (g) {
+					if (g.en_name === undefined) g.en_name = g.name;
+					g.name = pick(g.en_name);
+					localiseItems(g.items);
+				});
+			});
+		});
+	}
+	// The 52 item skins come from theme_extra/skins.json in English. Keep the
+	// originals so search still works in either language.
+	function localiseSkins() {
+		SKINS.list.forEach(function (s) {
+			if (!s.en) s.en = { name: s.name, groupName: s.groupName, cat: s.cat, desc: s.desc };
+			s.name = pick(s.en.name); s.groupName = pick(s.en.groupName);
+			s.cat = pick(s.en.cat); s.desc = pick(s.en.desc);
+		});
+	}
+	// Everything that depends on the resolved language. Called once at load and
+	// again once the game's own options file has been read (pre-boot).
+	function applyLang() {
+		resolveLang();
+		localiseDefs([VIDEO, MODS]);
+		localiseSkins();
+		buildIconOf();
+		if (btnVideo) btnVideo.textContent = T('Video Settings...');
+		if (btnMods) btnMods.textContent = T('Mods');
+	}
+	resolveLang();
 
 	// ------------------------------------------------------------ options file (gzip + base64 key:value lines)
 	function b64ToBytes(s) { var bin = atob(s), out = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; }
@@ -249,7 +338,19 @@
 			Object.assign(values, ALWAYS);
 			var want = [];
 			if (!safeMode) { try { want = await installPacks(); } catch (e) { console.warn('[Rise] packs', e); } }
-			await patchOptions(values, function (o) { editPackList(o, want); });
+			await patchOptions(values, function (o) {
+				editPackList(o, want);
+				// Language: a pending switch wins, then whatever the game already
+				// has, and only on a first run does this build default to Chinese.
+				var setlang = readJSON(SETLANG_KEY);
+				if (setlang) { o.map.lang = setlang; try { localStorage.removeItem(SETLANG_KEY); } catch (e) {} }
+				else if (o.map.lang == null && readJSON(GAMELANG_KEY) == null) o.map.lang = 'zh_cn';
+				if (o.map.lang != null && o.order.indexOf('lang') < 0) o.order.push('lang');
+				var was = gameLang;
+				gameLang = langOf(o.map.lang);
+				writeJSON(GAMELANG_KEY, gameLang);
+				if (was !== gameLang) setTimeout(applyLang, 0);
+			});
 			try { localStorage.removeItem(PENDING_KEY); } catch (e) {}
 		})(),
 		sleep(3000) // never hold the game hostage
@@ -362,17 +463,53 @@
 			return r < g ? (r < b ? r : b) : (g < b ? g : b);
 		};
 	}
-	// text templates from the game's own font (font/ascii.png)
+	// Text templates from the game's own font.
+	//   Latin: font/ascii.png, 8x8 cells -> GLYPHS (width + 1 px advance).
+	//   Chinese: unifont .hex, but the game draws unihex glyphs with
+	//   getOversample() == 2, so a 16x16 ideograph lands on the screen as 8x8 px
+	//   and advances width/2 + 1 = 9. The atlas is sampled GL_NEAREST with a
+	//   0.01-texel UV inset, so each screen pixel picks ONE texel out of a 2x2
+	//   block rather than averaging it: pixel i reads texel
+	//   floor(0.01 + (i + 0.5) * 15.98 / 8). Sub-pixel rounding can move a couple
+	//   of those, so several candidate sets are generated and the matcher keeps
+	//   whichever scores best.
+	var ZH_SAMPLES = [[1, 3, 5, 7, 8, 10, 12, 14], [0, 2, 4, 6, 8, 9, 11, 13],
+		[1, 3, 5, 7, 9, 11, 13, 15], [0, 2, 4, 6, 8, 10, 12, 14]];
 	var TPL = {};
-	function template(text) {
-		if (TPL[text]) return TPL[text];
+	// Returns a [width, 8 rows] pair, the same shape as GLYPHS, so template() can
+	// use one code path for both. Row bits are column 0 in bit 0.
+	function zhGlyph(ch, variant) {
+		var g = GLYPHS_ZH[ch];
+		if (!g) return null;
+		if (g[0] === 8) return [g[2], g[1]]; // bitmap provider, oversample 1
+		var idx = ZH_SAMPLES[variant % ZH_SAMPLES.length], rows = [];
+		for (var y = 0; y < 8; y++) {
+			var src = g[1][idx[y]], bits = 0;
+			for (var x = 0; x < 8; x++) if ((src >> (15 - idx[x])) & 1) bits |= 1 << x;
+			rows.push(bits);
+		}
+		return [8, rows];
+	}
+	function template(text, variant) {
+		var key = text + '\u0000' + (variant || 0);
+		if (TPL[key]) return TPL[key];
 		var on = [], off = [], x = 0;
 		for (var i = 0; i < text.length; i++) {
-			var g = GLYPHS[text[i]] || GLYPHS['?'];
+			var ch = text.charAt(i), g = GLYPHS_ZH[ch] ? zhGlyph(ch, variant || 0) : null;
+			if (!g) g = GLYPHS[ch] || GLYPHS['?'];
 			for (var y = 0; y < 8; y++) for (var c = 0; c < g[0]; c++) ((g[1][y] >> c) & 1 ? on : off).push(x + c, y);
 			x += g[0] + 1;
 		}
-		return (TPL[text] = { on: on, off: off, w: x });
+		return (TPL[key] = { on: on, off: off, w: x });
+	}
+	// One template for Latin, one per sampling variant for anything Chinese.
+	function templates(text) {
+		for (var i = 0; i < text.length; i++) if (GLYPHS_ZH[text.charAt(i)]) {
+			var out = [];
+			for (var k = 0; k < ZH_SAMPLES.length; k++) out.push(template(text, k));
+			return out;
+		}
+		return [template(text, 0)];
 	}
 	// Letters must be brighter than the pixels right around them. Local contrast
 	// (not a fixed "white") so text is found even while a screen fades in, and
@@ -396,15 +533,43 @@
 		return onMean / 255; // how visible the text is (it fades in with its screen)
 	}
 	function findText(get, text, x0, x1, y0, y1) {
-		var t = template(text);
-		for (var gy = y0; gy <= y1; gy++) for (var gx = x0; gx <= x1; gx++) {
-			var lv = matchAt(get, t, gx, gy);
-			if (lv) return { x: gx, y: gy, w: t.w - 1, level: lv };
+		var ts = templates(text);
+		if (ts.length === 1) { // unchanged fast path for Latin
+			var t = ts[0];
+			for (var gy = y0; gy <= y1; gy++) for (var gx = x0; gx <= x1; gx++) {
+				var lv = matchAt(get, t, gx, gy);
+				if (lv) return { x: gx, y: gy, w: t.w - 1, level: lv };
+			}
+			return null;
 		}
-		return null;
+		var best = null;
+		for (var k = 0; k < ts.length; k++) {
+			var tk = ts[k];
+			for (var y = y0; y <= y1; y++) for (var x = x0; x <= x1; x++) {
+				var l = matchAt(get, tk, x, y);
+				if (l > (best ? best.level : 0)) best = { x: x, y: y, w: tk.w - 1, level: l };
+				if (best && best.level >= 0.93) return best; // good enough, stop early
+			}
+		}
+		return best;
 	}
 
 	// ------------------------------------------------------------ screen watcher
+	// The strings Rise looks for on the finished frame, per game language. The
+	// title screen's version line is hardcoded English in the game, so it works
+	// either way; the rest come from the game's own translations.
+	var DETECT = {
+		en: {
+			options: 'Options', videoTitle: 'Video Settings', gameMenu: 'Game Menu',
+			videoBtn: 'Video Settings...', quitLabels: ['Save and Quit to Title', 'Disconnect'],
+			version: 'Rewritten by o_xer'
+		},
+		zh: {
+			options: '选项', videoTitle: '视频设置', gameMenu: '游戏菜单',
+			videoBtn: '视频设置…', quitLabels: ['保存并退回到标题屏幕', '断开连接'],
+			version: 'Rewritten by o_xer'
+		}
+	};
 	var screen = { name: null, s: 1, gw: 0, gh: 0, rects: {} }, layoutCache = {};
 	var lastCheck = 0, boostUntil = 0, pendingCheck = false;
 	function watcher(gl) {
@@ -426,22 +591,23 @@
 		var key = W + 'x' + H + 's' + s;
 		// 1. header titles, centred at the top
 		var head = grab(gl, s, 0, 0, gw, 60);
-		var titles = ['Options', 'Video Settings', 'Game Menu'];
+		var D = DETECT[gameLang] || DETECT.en;
+		var titles = [D.options, D.videoTitle, D.gameMenu];
 		for (var i = 0; i < titles.length; i++) {
-			var t = template(titles[i]);
+			var t = templates(titles[i])[0];
 			var cx = Math.floor(gw / 2) - Math.floor(t.w / 2);
-			var hit = findText(head, titles[i], cx - 1, cx + 1, 2, titles[i] === 'Game Menu' ? 52 : 36);
+			var hit = findText(head, titles[i], cx - 1, cx + 1, 2, i === 2 ? 52 : 36);
 			if (hit) {
-				if (titles[i] === 'Video Settings') { vanillaVideoOpened(); return; }
-				if (titles[i] === 'Game Menu') {
+				if (i === 1) { vanillaVideoOpened(); return; }
+				if (i === 2) {
 					// in-game Escape menu: a full-width Mods button one row under its last button
 					if (screen.name !== 'pause') delete layoutCache[key + 'pause']; // re-measure each time it opens (Open to LAN etc. shift it)
 					var pr = layoutCache[key + 'pause'];
 					if (pr === undefined) {
 						var allp = grab(gl, s, 0, 0, gw, gh), cxp = Math.floor(gw / 2), last = null;
-						['Save and Quit to Title', 'Disconnect'].forEach(function (lbl) {
+						D.quitLabels.forEach(function (lbl) {
 							if (last) return;
-							var tw = template(lbl).w;
+							var tw = templates(lbl)[0].w;
 							last = findText(allp, lbl, cxp - Math.floor(tw / 2) - 1, cxp - Math.floor(tw / 2) + 1, hit.y + 20, gh - 20);
 						});
 						pr = layoutCache[key + 'pause'] = last ? { x: cxp - 102, y: last.y - 6 + 24, w: 204, h: 20 } : null;
@@ -452,7 +618,7 @@
 				var r = layoutCache[key + 'opt'];
 				if (r === undefined) {
 					var all = grab(gl, s, 0, 0, gw, gh);
-					var f = findText(all, 'Video Settings...', Math.floor(gw / 2) - 175, Math.floor(gw / 2) + 20, 40, gh - 30);
+					var f = findText(all, D.videoBtn, Math.floor(gw / 2) - 175, Math.floor(gw / 2) + 20, 40, gh - 30);
 					r = layoutCache[key + 'opt'] = f ? btnRect(f, 150) : null;
 				}
 				setScreen('options', { video: r }, hit.level);
@@ -461,7 +627,7 @@
 		}
 		// 2. title screen: its version line bottom-left
 		var foot = grab(gl, s, 0, gh - 30, 140, 30);
-		var tf = findText(foot, 'Rewritten by o_xer', 1, 3, gh - 26, gh - 8);
+		var tf = findText(foot, D.version, 1, 3, gh - 26, gh - 8);
 		if (tf) {
 			// 26.2 title layout: the Credits button sits at (w/2 + 2, h/4 + 144), 98x20
 			setScreen('title', { mods: { x: Math.floor(gw / 2) + 2, y: Math.floor(gh / 4) + 144, w: 98, h: 20 } }, tf.level);
@@ -494,7 +660,7 @@
 		bar.style.cssText = 'position:fixed;z-index:2147483647;right:16px;bottom:16px;display:flex;gap:10px;font:bold 15px system-ui,sans-serif';
 		var mk = function (label, fn) {
 			var b = document.createElement('button');
-			b.textContent = label;
+			b.textContent = T(label);
 			b.style.cssText = 'padding:12px 18px;border:2px solid #40f0dc;background:#06345c;color:#fff;cursor:pointer;border-radius:4px';
 			b.onclick = fn; bar.appendChild(b); return b;
 		};
@@ -503,8 +669,8 @@
 			var rep = readJSON('eaglercraft26.lastCrashReport.v2');
 			var text = (rep && rep.report) || (panel && panel.innerText) || 'no report';
 			text = 'Rise ' + VERSION + ' | mods: ' + JSON.stringify(mods) + ' | cfg: ' + JSON.stringify(cfg) + '\n\n' + text;
-			(navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { cp.textContent = 'Copied!'; }, function () {
-				var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); cp.textContent = 'Copied!'; } catch (e) {} ta.remove();
+			(navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { cp.textContent = T('Copied!'); }, function () {
+				var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); cp.textContent = T('Copied!'); } catch (e) {} ta.remove();
 			});
 		});
 		document.body.appendChild(bar);
@@ -549,7 +715,7 @@
 	var cmdQueue = [], running = false;
 	function queueCommands(list, label) {
 		cmdQueue = cmdQueue.concat(list);
-		toast(document.pointerLockElement ? 'Running ' + label + '…' : label + ': runs when you go back to the game');
+		toast(document.pointerLockElement ? T('Running {0}…', T(label)) : T('{0}: runs when you go back to the game', T(label)));
 		runCommands();
 	}
 	async function runCommands() {
@@ -598,10 +764,13 @@
 	document.addEventListener('fullscreenchange', ensureMounted);
 
 	var C = { accent: '#40f0dc', box: 'rgba(2,18,34,.9)', row: 'rgba(3,26,46,.78)', rowHover: 'rgba(12,78,120,.85)', text: '#e8fffc', dim: '#8fc9d2' };
+	// RiseMC is the pixel font built from the game's own ascii.png; it only has
+	// Latin, so Chinese falls through to the system font (see isZh()).
+	var FONT_STACK = 'RiseMC,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC","Source Han Sans SC",monospace';
 	var CSS = [
 		':host{all:initial}',
 		'*{box-sizing:border-box}',
-		'.mc{font-family:RiseMC,monospace;font-size:16px;line-height:1;color:' + C.text + ';text-shadow:2px 2px 0 rgba(0,0,0,.55);-webkit-font-smoothing:none;user-select:none}',
+		'.mc{font-family:' + FONT_STACK + ';font-size:16px;line-height:1;color:' + C.text + ';text-shadow:2px 2px 0 rgba(0,0,0,.55);-webkit-font-smoothing:none;user-select:none}',
 		/* game-matched overlay buttons */
 		'.gbtn{position:fixed;display:none;align-items:center;justify-content:center;padding-top:1px;cursor:pointer;border:1px solid #28aac8;border-radius:2px;background:linear-gradient(180deg,#0e5c8c,#06345c);color:#fff;overflow:hidden;transition:background .25s ease,border-color .25s ease,box-shadow .25s ease}',
 		'.gbtn::after{content:"";position:absolute;top:0;bottom:0;width:40%;left:-60%;background:linear-gradient(100deg,transparent,rgba(210,255,250,.35),transparent);pointer-events:none}',
@@ -671,7 +840,7 @@
 		'.scrim.video .info p{font-size:15px}',
 		'@media (max-width:900px){.scrim.video .list{width:calc(100vw - 24px)}.scrim.video .info{display:none}}',
 		'.sbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px}',
-		'.sbar input{font-family:RiseMC,monospace;font-size:14px;color:' + C.text + ';background:#01101e;border:1px solid rgba(64,240,220,.35);padding:6px 9px;width:220px;outline:none;transition:border-color .2s ease}',
+		'.sbar input{font-family:' + FONT_STACK + ';font-size:14px;color:' + C.text + ';background:#01101e;border:1px solid rgba(64,240,220,.35);padding:6px 9px;width:220px;outline:none;transition:border-color .2s ease}',
 		'.sbar input:focus{border-color:' + C.accent + '}',
 		'.chip{padding:5px 10px;font-size:13px;background:' + C.box + ';border:1px solid rgba(64,240,220,.2);cursor:pointer;transition:background .2s ease,border-color .2s ease}',
 		'.chip:hover{border-color:' + C.accent + '}',
@@ -728,10 +897,12 @@
 	fontStyle.textContent = '@font-face{font-family:RiseMC;src:url(data:font/ttf;base64,' + FONT_B64 + ') format("truetype");font-display:block}';
 	(document.head || document.documentElement).appendChild(fontStyle);
 	root.innerHTML = '<style>' + CSS + '</style>' +
-		'<div class="gbtn mc" data-b="video">Video Settings...</div>' +
-		'<div class="gbtn mc" data-b="mods">Mods</div>' +
+		'<div class="gbtn mc" data-b="video"></div>' +
+		'<div class="gbtn mc" data-b="mods"></div>' +
 		'<div class="hud mc"></div><div class="toast mc"></div>';
 	var btnVideo = root.querySelector('[data-b=video]'), btnMods = root.querySelector('[data-b=mods]');
+	btnVideo.textContent = T('Video Settings...');
+	btnMods.textContent = T('Mods');
 	var hudEl = root.querySelector('.hud'), toastEl = root.querySelector('.toast');
 	btnVideo.addEventListener('click', function () { openPanel('video'); });
 	btnMods.addEventListener('click', function () { openPanel('mods'); });
@@ -755,7 +926,7 @@
 		el.style.top = (b.top + r.y * k) + 'px';
 		el.style.width = (r.w * k) + 'px';
 		el.style.height = (r.h * k) + 'px';
-		el.style.fontSize = (8 * k) + 'px';
+		el.style.fontSize = ((isZh() ? 10 : 8) * k) + 'px';
 		el.style.textShadow = k + 'px ' + k + 'px 0 #3f3f3f';
 		el.style.borderWidth = Math.max(1, Math.round(k)) + 'px';
 	}
@@ -821,6 +992,11 @@
 			] }
 		] },
 		{ id: 'advanced', name: 'Advanced', groups: [
+			{ name: 'LANGUAGE', items: [
+				{ rise: 'lang', label: 'Language', type: 'cycle', restart: true, impact: 'None',
+					values: [['auto', 'Follow the game'], ['zh', '简体中文'], ['en', 'English']],
+					desc: 'What language the Rise menus and the game itself use. Right Shift opens this panel, Alt + Right Shift opens Mods.' }
+			] },
 			{ name: 'ADVANCED', items: [
 				{ key: 'eaglerPerformanceCounters', label: 'Show FPS & TPS', type: BOOL, impact: 'None', desc: 'The game\'s own counters in the corner.' },
 				{ key: 'rawMouseInput', label: 'Raw Mouse Input', type: BOOL, impact: 'None', desc: 'Unaccelerated mouse movement.' },
@@ -835,7 +1011,7 @@
 	// ------------------------------------------------------------ Mods (definitions)
 	function modBool(id, label, desc, extra) { return Object.assign({ mod: id, label: label, type: BOOL, desc: desc }, extra || {}); }
 	function cmdRow(label, desc, buttons) { return { type: 'actions', label: label, desc: desc, buttons: buttons }; }
-	function chord(key, code, kc, label) { return function () { chordQueue.push({ key: key, code: code, kc: kc }); toast(label + ': toggles when you go back to the game'); runChords(); }; }
+	function chord(key, code, kc, label) { return function () { chordQueue.push({ key: key, code: code, kc: kc }); toast(T('{0}: toggles when you go back to the game', T(label))); runChords(); }; }
 	function cmd(list, label) { return function () { queueCommands(list, label); }; }
 	var REDSTONE_KIT = ['/give @s observer 64', '/give @s piston 64', '/give @s sticky_piston 64', '/give @s slime_block 64', '/give @s honey_block 64', '/give @s redstone 64', '/give @s repeater 64', '/give @s tnt 64', '/give @s redstone_block 64'];
 	function opt(id, label, values, desc, extra) { return Object.assign({ mod: id, label: label, type: 'cycle', values: values, desc: desc }, extra || {}); }
@@ -913,6 +1089,7 @@
 		] },
 		{ id: 'skins', name: 'Skins', skins: true, groups: [] }
 	];
+	applyLang();
 
 	// ------------------------------------------------------------ panels
 	var isOpen = false, scrim = null, which = null, current = null, staged = {}, stagedRise = {}, stagedMods = {}, page = { video: 'general', mods: 'hud' };
@@ -980,14 +1157,20 @@
 	}
 	function packStamp() { var s = readJSON('rise.packs.active') || ''; return (s.split('|')[1] || '').split(','); }
 	function commit(restart) {
+		var picked = stagedRise.lang;
 		for (var r in stagedRise) cfg[r] = stagedRise[r];
 		for (var m in stagedMods) mods[m] = stagedMods[m];
 		stagedRise = {}; stagedMods = {};
 		saveCfg(); saveMods();
+		// 'zh' / 'en' also switch the GAME's language, so one click gets the panels
+		// and the game talking the same language. The options file is only written
+		// on the next start: the game rewrites its options on shutdown, so writing
+		// it right now would be lost.
+		if (picked === 'zh' || picked === 'en') writeJSON(SETLANG_KEY, picked === 'zh' ? 'zh_cn' : 'en_us');
 		var pend = {};
 		for (var key in staged) if (staged[key] !== current.map[key]) pend[key] = staged[key];
 		if (Object.keys(pend).length) writeJSON(PENDING_KEY, pend);
-		if (restart) { toast('Restarting Rise Client…'); setTimeout(function () { location.reload(); }, 450); }
+		if (restart) { toast(T('Restarting Rise Client…')); setTimeout(function () { location.reload(); }, 450); }
 	}
 
 	function build() {
@@ -1000,12 +1183,12 @@
 			t.onclick = function () { page[which] = p.id; tabs.querySelectorAll('.tab').forEach(function (x) { x.classList.toggle('on', x === t); }); renderList(); };
 			tabs.appendChild(t);
 		});
-		var note = el('div', 'note', 'Some changes apply after a restart. Save & quit your world first.');
+		var note = el('div', 'note', T('Some changes apply after a restart. Save & quit your world first.'));
 		var bar = el('div', 'bar');
-		var apply = el('div', 'btn', 'Apply');
-		var done = el('div', 'btn', 'Done');
-		apply.onclick = function () { if (needsRestart()) commit(true); else { commit(false); toast('Applied'); } };
-		done.onclick = function () { commit(false); if (needsRestart()) toast('Saved: applies next time you open Rise'); closePanel(); };
+		var apply = el('div', 'btn', T('Apply'));
+		var done = el('div', 'btn', T('Done'));
+		apply.onclick = function () { if (needsRestart()) commit(true); else { commit(false); toast(T('Applied')); } };
+		done.onclick = function () { commit(false); if (needsRestart()) toast(T('Saved: applies next time you open Rise')); closePanel(); };
 		bar.appendChild(apply); bar.appendChild(done);
 		scrim.appendChild(tabs); scrim.appendChild(list); scrim.appendChild(info); scrim.appendChild(note); scrim.appendChild(bar);
 		root.appendChild(scrim);
@@ -1016,17 +1199,17 @@
 		if (!scrim) return;
 		var r = needsRestart();
 		scrim._note.classList.toggle('show', r);
-		scrim._apply.textContent = r ? 'Apply & Restart' : 'Apply';
+		scrim._apply.textContent = r ? T('Apply & Restart') : T('Apply');
 		scrim._list.querySelectorAll('.row').forEach(function (row) { if (row._it && (row._it.key || row._it.rise || row._it.mod)) row.classList.toggle('mod', isModified(row._it)); });
 	}
 	function showInfo(it, text) {
 		if (!scrim) return;
 		var info = scrim._info;
 		info.textContent = '';
-		info.appendChild(el('b', null, it.label + (text ? ': ' + text : '')));
+		info.appendChild(el('b', null, it.label + (text ? T('COLON') + T(text) : '')));
 		if (it.desc) info.appendChild(el('p', null, it.desc));
-		if (it.impact) info.appendChild(el('i', null, 'Performance impact: ' + it.impact));
-		if (it.restart || it.key) { var pr = el('p', null, 'Applies after restart.'); pr.style.marginTop = '6px'; info.appendChild(pr); }
+		if (it.impact) info.appendChild(el('i', null, T('Performance impact: {0}', it.impact)));
+		if (it.restart || it.key) { var pr = el('p', null, T('Applies after restart.')); pr.style.marginTop = '6px'; info.appendChild(pr); }
 		info.classList.add('show');
 	}
 	function renderList() {
@@ -1034,7 +1217,7 @@
 		list.textContent = '';
 		var p = scrim._defs.filter(function (x) { return x.id === page[which]; })[0];
 		if (p.skins) { renderSkins(list); scrim._info.classList.remove('show'); refresh(); return; }
-		list.appendChild(el('div', 'hint', which === 'mods' ? 'Tick a box to turn a mod on. Right-click a mod to see what it does and change its settings.' : 'Right-click an option to see what it does.'));
+		list.appendChild(el('div', 'hint', T(which === 'mods' ? 'Tick a box to turn a mod on. Right-click a mod to see what it does and change its settings.' : 'Right-click an option to see what it does.')));
 		p.groups.forEach(function (g) {
 			list.appendChild(el('div', 'gh', g.name));
 			g.items.forEach(function (it) { list.appendChild(renderRow(it)); });
@@ -1085,7 +1268,7 @@
 			var paint = function () {
 				var v = parseFloat(r.value);
 				r.style.setProperty('--p', ((v - it.min) / (it.max - it.min) * 100) + '%');
-				out.textContent = it.fmt ? it.fmt(v) : v;
+				out.textContent = it.fmt ? T(it.fmt(v)) : v;
 			};
 			r.oninput = function () {
 				paint();
@@ -1099,25 +1282,25 @@
 			wrap.appendChild(out); wrap.appendChild(r); right.appendChild(wrap);
 		} else if (it.type === 'presets') {
 			[['chromebook', 'Chromebook'], ['balanced', 'Balanced'], ['quality', 'Quality']].forEach(function (pr) {
-				var pb = el('div', 'btn small', pr[1]);
+				var pb = el('div', 'btn small', T(pr[1]));
 				pb.onclick = function () {
 					var vals = PRESETS[pr[0]];
 					for (var key in vals) staged[key] = vals[key];
 					if (pr[0] === 'chromebook') { stagedRise.chromebook = true; stagedRise.chunkCap = true; cfg.hidpi = false; }
 					else { stagedRise.chromebook = false; stagedRise.chunkCap = false; if (pr[0] === 'quality') cfg.hidpi = true; }
-					saveCfg(); applyScale(); renderList(); toast(pr[1] + ' preset ready: press Apply & Restart');
+					saveCfg(); applyScale(); renderList(); toast(T('{0} preset ready: press Apply & Restart', T(pr[1])));
 				};
 				right.appendChild(pb);
 			});
 		} else if (it.type === 'actions') {
 			it.buttons.forEach(function (bt) { var ab = el('div', 'btn small', bt[0]); ab.onclick = bt[1]; right.appendChild(ab); });
 		} else if (it.type === 'blueprint') {
-			var ob = el('div', 'btn small', 'Open');
+			var ob = el('div', 'btn small', T('Open'));
 			ob.onclick = function () { closePanel(); openBlueprint(); };
 			right.appendChild(ob);
 		} else if (it.type === 'reset') {
-			var rb = el('div', 'btn small', 'Reset');
-			rb.onclick = function () { var seeded = cfg.seeded; cfg = Object.assign({}, DEF_CFG, { seeded: seeded }); saveCfg(); dynScale = 1; applyScale(); stagedRise = {}; renderList(); toast('Rise settings reset'); };
+			var rb = el('div', 'btn small', T('Reset'));
+			rb.onclick = function () { var seeded = cfg.seeded; cfg = Object.assign({}, DEF_CFG, { seeded: seeded }); saveCfg(); dynScale = 1; applyScale(); stagedRise = {}; renderList(); toast(T('Rise settings reset')); };
 			right.appendChild(rb);
 		}
 		row.addEventListener('mouseenter', function () { showInfo(it, curText()); });
@@ -1129,7 +1312,7 @@
 	}
 
 	// ---- Skins tab
-	var skinFilter = { q: '', cat: 'All' };
+	var skinFilter = { q: '', cat: 'All' }; // English keys; display goes through T()
 	var SKIN_CATS = ['All', 'Weapons', 'Tools', 'Food', 'Totems', 'Pearls', 'Animated', 'Equipped'];
 	function curSkins() { return valueOf({ mod: 'skins' }) || {}; }
 	function skinPic(s, size) {
@@ -1148,15 +1331,15 @@
 	}
 	function renderSkins(list) {
 		var bar = el('div', 'sbar');
-		var q = el('input'); q.placeholder = 'Search skins...'; q.value = skinFilter.q; q.spellcheck = false;
+		var q = el('input'); q.placeholder = T('Search skins...'); q.value = skinFilter.q; q.spellcheck = false;
 		bar.appendChild(q);
 		SKIN_CATS.forEach(function (c) {
-			var ch = el('div', 'chip' + (skinFilter.cat === c ? ' on' : ''), c);
+			var ch = el('div', 'chip' + (skinFilter.cat === c ? ' on' : ''), T(c));
 			ch.onclick = function () { skinFilter.cat = c; renderList(); };
 			bar.appendChild(ch);
 		});
 		list.appendChild(bar);
-		list.appendChild(el('div', 'hint', 'Click a skin to wear it (one per item), click again to take it off. Right-click for a closer look. Skins only change how things look. Press Apply & Restart when you are done.'));
+		list.appendChild(el('div', 'hint', T('Click a skin to wear it (one per item), click again to take it off. Right-click for a closer look. Skins only change how things look. Press Apply & Restart when you are done.')));
 		var grid = el('div', 'grid');
 		list.appendChild(grid);
 		function fill() {
@@ -1165,20 +1348,22 @@
 			SKINS.list.forEach(function (s) {
 				if (skinFilter.cat === 'Animated' && !s.anim) return;
 				if (skinFilter.cat === 'Equipped' && eq[s.group] !== s.id) return;
-				if (['All', 'Animated', 'Equipped'].indexOf(skinFilter.cat) < 0 && s.cat !== skinFilter.cat) return;
-				var hay = (s.name + ' ' + s.groupName + ' ' + s.cat + ' ' + s.desc + (s.anim ? ' animated' : '')).toLowerCase();
+				if (['All', 'Animated', 'Equipped'].indexOf(skinFilter.cat) < 0 && s.cat !== T(skinFilter.cat)) return;
+				// searchable in either language
+				var hay = (s.name + ' ' + s.groupName + ' ' + s.cat + ' ' + s.desc + ' ' +
+					s.en.name + ' ' + s.en.groupName + ' ' + s.en.cat + ' ' + s.en.desc + (s.anim ? ' animated' : '')).toLowerCase();
 				if (terms.some(function (w) { return hay.indexOf(w) < 0; })) return;
 				var tl = el('div', 'tile' + (eq[s.group] === s.id ? ' eq' : ''));
 				tl.appendChild(skinPic(s, 96));
 				tl.appendChild(el('div', 'nm', s.name));
 				tl.appendChild(el('div', 'gp', s.groupName));
-				if (s.anim) tl.appendChild(el('div', 'badge', 'ANIMATED'));
-				if (eq[s.group] === s.id) tl.appendChild(el('div', 'eqb', 'WEARING'));
+				if (s.anim) tl.appendChild(el('div', 'badge', T('ANIMATED')));
+				if (eq[s.group] === s.id) tl.appendChild(el('div', 'eqb', T('WEARING')));
 				tl.onclick = function () { toggleSkin(s); fill(); };
 				tl.oncontextmenu = function (e) { e.preventDefault(); openSkinCard(s, fill); };
 				grid.appendChild(tl); shown++;
 			});
-			if (!shown) grid.appendChild(el('div', 'hint', 'No skins match.'));
+			if (!shown) grid.appendChild(el('div', 'hint', T('No skins match.')));
 		}
 		q.oninput = function () { skinFilter.q = q.value; fill(); };
 		fill();
@@ -1194,12 +1379,12 @@
 			s.tints.forEach(function (b) { tr.appendChild(img(b, 40)); });
 			card.appendChild(tr);
 		}
-		card.appendChild(el('div', 'what', s.desc + (s.anim ? ' (Animated.)' : '') + ' Replaces: ' + s.groupName + '.'));
-		var foot = el('div', 'foot'), wear = el('div', 'btn small', curSkins()[s.group] === s.id ? 'Take Off' : 'Wear'), done = el('div', 'btn small', 'Done');
-		wear.onclick = function () { toggleSkin(s); wear.textContent = curSkins()[s.group] === s.id ? 'Take Off' : 'Wear'; if (onChange) onChange(); };
+		card.appendChild(el('div', 'what', s.desc + (s.anim ? T(' (Animated.)') : '') + T(' Replaces: ') + s.groupName + T('.')));
+		var foot = el('div', 'foot'), wear = el('div', 'btn small', T(curSkins()[s.group] === s.id ? 'Take Off' : 'Wear')), done = el('div', 'btn small', T('Done'));
+		wear.onclick = function () { toggleSkin(s); wear.textContent = T(curSkins()[s.group] === s.id ? 'Take Off' : 'Wear'); if (onChange) onChange(); };
 		done.onclick = function () { closeCard(); };
 		foot.style.gap = '8px'; foot.appendChild(wear); foot.appendChild(done); card.appendChild(foot);
-		card.appendChild(el('div', 'rs', 'Skins apply after Apply & Restart.'));
+		card.appendChild(el('div', 'rs', T('Skins apply after Apply & Restart.')));
 		bg.appendChild(card);
 		bg.addEventListener('mousedown', function (e) { if (e.target === bg) closeCard(); });
 		bg.addEventListener('contextmenu', function (e) { e.preventDefault(); });
@@ -1208,10 +1393,15 @@
 		void bg.offsetWidth; bg.classList.add('open');
 	}
 
-	// pictures in the right-click card
-	var ICON_OF = { 'Hitboxes': 'hitboxes', 'Chunk Borders': 'chunks', 'Blueprints': 'blueprint', 'Freeze Time': 'freeze', 'Step': 'step', 'Tick Rate': 'rate',
-		'Redstone Kit': 'kit', 'Game Mode': 'gamemode', 'Time & Weather': 'time', 'World Rules': 'rules', 'Clear Items Now': 'clearItems',
-		'Entity Cramming': 'cramming', 'TNT Lag Fix': 'tnt' };
+	// pictures in the right-click card (keyed by the *displayed* label, so the
+	// lookup still works after localiseItems swapped the labels)
+	function buildIconOf() {
+		var raw = { 'Hitboxes': 'hitboxes', 'Chunk Borders': 'chunks', 'Blueprints': 'blueprint', 'Freeze Time': 'freeze', 'Step': 'step', 'Tick Rate': 'rate',
+			'Redstone Kit': 'kit', 'Game Mode': 'gamemode', 'Time & Weather': 'time', 'World Rules': 'rules', 'Clear Items Now': 'clearItems',
+			'Entity Cramming': 'cramming', 'TNT Lag Fix': 'tnt' };
+		for (var k in ICON_OF) delete ICON_OF[k];
+		for (var k2 in raw) ICON_OF[T(k2)] = raw[k2];
+	}
 	function dataPng(b64) { return 'url(data:image/png;base64,' + b64 + ')'; }
 	function img(b64, size) { var i = el('img'); i.src = 'data:image/png;base64,' + b64; i.style.width = i.style.height = (size || 80) + 'px'; return i; }
 	function buildPic(it) {
@@ -1285,14 +1475,14 @@
 		card.appendChild(el('div', 'what', it.desc || ''));
 		var add = function (item) { var r = renderRow(item); r._inCard = true; card.appendChild(r); };
 		if (it.type === BOOL) {
-			var on = Object.assign({}, it, { label: it.key || it.rise ? 'On' : 'Enabled', opts: null });
+			var on = Object.assign({}, it, { label: T(it.key || it.rise ? 'On' : 'Enabled'), opts: null });
 			add(on);
 		} else if (it.type === 'actions' || it.type === 'blueprint' || it.type === 'cycle' || it.type === 'slider' || it.type === 'presets') {
-			add(Object.assign({}, it, { label: it.type === 'actions' ? 'Run' : 'Value' }));
+			add(Object.assign({}, it, { label: T(it.type === 'actions' ? 'Run' : 'Value') }));
 		}
 		(it.opts || []).forEach(add);
-		if (it.restart || it.key || (it.opts || []).some(function (o) { return o.restart; })) card.appendChild(el('div', 'rs', 'Some of this applies after a restart (press Apply & Restart).'));
-		var foot = el('div', 'foot'), done = el('div', 'btn small', 'Done');
+		if (it.restart || it.key || (it.opts || []).some(function (o) { return o.restart; })) card.appendChild(el('div', 'rs', T('Some of this applies after a restart (press Apply & Restart).')));
+		var foot = el('div', 'foot'), done = el('div', 'btn small', T('Done'));
 		done.onclick = function () { closeCard(); };
 		foot.appendChild(done); card.appendChild(foot);
 		bg.appendChild(card);
@@ -1394,7 +1584,7 @@
 	function openBlueprint() {
 		if (!bpLoaded) {
 			bpLoaded = true;
-			try { (new Function(BLUEPRINT_SRC))(); } catch (e) { console.warn('[Rise] blueprint', e); toast('Blueprints failed to load'); return; }
+			try { (new Function(BLUEPRINT_SRC))(); } catch (e) { console.warn('[Rise] blueprint', e); toast(T('Blueprints failed to load')); return; }
 		}
 		setTimeout(function () { if (window.__blueprintMod && window.__blueprintMod.open) window.__blueprintMod.open(); }, 50);
 	}
@@ -1423,7 +1613,7 @@
 		var every = (mods.clearLagMinutes || 3) * 60;
 		if (every !== lagEvery) { lagEvery = every; lagLeft = every; }
 		lagLeft--;
-		if (lagLeft === 10 && !lagWarned) { lagWarned = true; toast('Clear Lag: dropped items clear in 10 seconds'); }
+		if (lagLeft === 10 && !lagWarned) { lagWarned = true; toast(T('Clear Lag: dropped items clear in 10 seconds')); }
 		if (lagLeft <= 0) {
 			lagLeft = lagEvery; lagWarned = false;
 			queueCommands(['/kill @e[type=minecraft:item]'], 'Clear Lag');
@@ -1441,7 +1631,14 @@
 			if (!inField) e.stopImmediatePropagation();
 			return;
 		}
-		if (isRShift(e) && !e.repeat && gameReady()) { e.preventDefault(); e.stopImmediatePropagation(); openPanel('video'); return; }
+		if (isRShift(e) && !e.repeat && gameReady()) {
+			e.preventDefault(); e.stopImmediatePropagation();
+			// Alt (or Ctrl) + Right Shift always reaches Mods, whatever language
+			// the game draws its menus in: the pixel reader has to recognise the
+			// game's own words, and a hotkey never depends on that.
+			openPanel((e.altKey || e.ctrlKey) ? 'mods' : 'video');
+			return;
+		}
 		if (!document.pointerLockElement) {
 			// only keys that can switch screens (typing in chat or a text box doesn't)
 			if (/^(Escape|Enter|NumpadEnter|Tab|Space|Arrow)/.test(e.code || '')) { pendingCheck = true; boostUntil = performance.now() + 2500; }
@@ -1459,7 +1656,7 @@
 		if (mods.fullbright && c === 'KeyK' && !e.repeat) {
 			e.stopImmediatePropagation();
 			mods.fullbrightOn = !mods.fullbrightOn; saveMods(); applyFrameEffects();
-			toast('Fullbright ' + (mods.fullbrightOn ? 'ON' : 'OFF'));
+			toast(T('Fullbright {0}', T(mods.fullbrightOn ? 'ON' : 'OFF')));
 		}
 	}, true);
 	window.addEventListener('keyup', function (e) {
