@@ -37,9 +37,10 @@ browser, Wasm-GC). The base game is o_xer's Eaglercraft 26.2 port; Rise adds:
 - **Chinese build** (this fork): the CJK blocks are back in unifont so the game's
   own 简体中文 translation actually renders instead of showing boxes, Rise's panels
   are translated (449 strings in `src/i18n.js`), and the pixel screen reader
-  recognises the Chinese titles as well as the English ones. Language is
-  switchable in Video Settings -> Advanced -> Language. See
-  [README.zh-CN.md](README.zh-CN.md) for the full write-up.
+  recognises the Chinese titles as well as the English ones. Chinese is the
+  default; Video Settings -> Advanced -> Language switches between 简体中文,
+  English and "follow the game". See [README.zh-CN.md](README.zh-CN.md) for the
+  full write-up.
 
 How the buttons work: the game is a compiled Wasm blob, so Rise reads each
 finished frame (menu text is matched against the game's own font) to know
@@ -47,11 +48,13 @@ which screen is open, and draws pixel-matched buttons over the game's.
 
 ## Builds
 
+**Play online: <https://easonliu-banfang.github.io/Riseeeeeiey/>**
+
 | File | Use |
 | --- | --- |
 | `dist/RiseClient.html` | Single offline file (76.5 MB). Download it and open it. |
 | `dist/web/` | Web version for hosting: `index.html` + `payload/*.bin`, 57 MB, cached in the browser after the first load. |
-| `docs/` | Same as `dist/web/`, for GitHub Pages. |
+| `docs/` | Same as `dist/web/`; this is what GitHub Pages serves. |
 
 ## Rebuilding
 

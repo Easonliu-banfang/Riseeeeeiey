@@ -42,7 +42,7 @@ var RISE_ZH = {
 	'OFF': '关闭',
 
 	// ---------------------------------------------------------------- keys
-	'What language the Rise menus and the game itself use. Right Shift opens this panel, Alt + Right Shift opens Mods.': 'Rise 面板和游戏本身使用的语言。右 Shift 打开本面板，Alt + 右 Shift 打开模组。',
+	'What language the Rise menus and the game itself use. Chinese is the default. Right Shift opens this panel, Alt + Right Shift opens Mods.': 'Rise 面板和游戏本身使用的语言，默认中文。右 Shift 打开本面板，Alt + 右 Shift 打开模组。',
 
 	// ---------------------------------------------------------------- crash bar
 	'Restart in Safe Mode': '以安全模式重启',

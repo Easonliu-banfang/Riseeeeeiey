@@ -124,6 +124,9 @@ win.WebGL2RenderingContext = FakeGL2;
 		const txt = root.querySelector('.scrim').textContent;
 		ok(txt.includes('渲染距离'), 'video panel has 渲染距离');
 		ok(txt.includes('应用'), 'video panel has the 应用 button');
+		[...root.querySelectorAll('.tab')].find((t) => t.textContent === '高级').onclick();
+		const adv = root.querySelector('.scrim').textContent;
+		ok(adv.includes('语言') && adv.includes('简体中文'), 'language row defaults to 简体中文');
 	} catch (e) {
 		ok(false, 'video panel threw: ' + e.message);
 	}
@@ -176,8 +179,9 @@ win.WebGL2RenderingContext = FakeGL2;
 })();
 
 // ---------------------------------------------------------------- English build
-// Same script with the game's language cached as English: the panels must fall
-// back to English and the reader must still recognise the vanilla titles.
+// Same script with the language pinned to English: the panels must fall back to
+// English and the reader must still recognise the vanilla titles. (The Rise UI
+// defaults to Chinese, so this has to be an explicit choice.)
 async function englishPass() {
 	console.log('— English regression');
 	const d2 = new JSDOM('<!doctype html><html><head></head><body><div id="game_frame"><canvas></canvas></div></body></html>',
@@ -187,6 +191,7 @@ async function englishPass() {
 		if (globalThis[k] && !w2[k]) w2[k] = globalThis[k];
 	}
 	w2.localStorage.setItem('rise.gamelang', JSON.stringify('en'));
+	w2.localStorage.setItem('rise.config', JSON.stringify({ lang: 'en' }));
 	w2.eaglercraftXOpts = { worldsDB: 'worlds' };
 	class GL2b { }
 	GL2b.prototype.bindFramebuffer = function () { };

@@ -53,7 +53,7 @@
 	if (readJSON('rise.safe')) safeMode = true;
 	var nextFails = boot.pending ? (boot.fails || 0) + 1 : 0;
 	writeJSON(BOOT_KEY, { pending: true, fails: nextFails, at: Date.now(), safe: safeMode });
-	var DEF_CFG = { seeded: false, chromebook: lowEnd, scale: 1, hidpi: !lowEnd, dynamic: false, targetFps: 50, meshWorkers: 0, chunkCap: false, lang: 'auto' };
+	var DEF_CFG = { seeded: false, chromebook: lowEnd, scale: 1, hidpi: !lowEnd, dynamic: false, targetFps: 50, meshWorkers: 0, chunkCap: false, lang: 'zh' };
 	var cfg = readJSON(CFG_KEY) || {};
 	for (var k in DEF_CFG) if (!(k in cfg)) cfg[k] = DEF_CFG[k];
 	if ((cfg._v || 0) < 4) { cfg.chunkCap = false; cfg._v = 4; writeJSON(CFG_KEY, cfg); } // debug flag: off by default now
@@ -78,8 +78,9 @@
 	// Two separate things:
 	//   gameLang — what language the GAME draws its menus in. The screen reader
 	//              matches the game's own text, so this picks the template set.
-	//   lang     — what language RISE's own panels use. cfg.lang 'auto' follows
-	//              gameLang, otherwise it is pinned to 'zh' or 'en'.
+	//   lang     — what language RISE's own panels use. This build ships Chinese:
+	//              cfg.lang defaults to 'zh' and can be set to 'en', or to 'auto'
+	//              to follow gameLang.
 	// gameLang is cached in localStorage because reading the game's options file
 	// is async (gzip) and this script has to build its UI synchronously.
 	var GAMELANG_KEY = 'rise.gamelang';
@@ -994,8 +995,8 @@
 		{ id: 'advanced', name: 'Advanced', groups: [
 			{ name: 'LANGUAGE', items: [
 				{ rise: 'lang', label: 'Language', type: 'cycle', restart: true, impact: 'None',
-					values: [['auto', 'Follow the game'], ['zh', '简体中文'], ['en', 'English']],
-					desc: 'What language the Rise menus and the game itself use. Right Shift opens this panel, Alt + Right Shift opens Mods.' }
+					values: [['zh', '简体中文'], ['en', 'English'], ['auto', 'Follow the game']],
+					desc: 'What language the Rise menus and the game itself use. Chinese is the default. Right Shift opens this panel, Alt + Right Shift opens Mods.' }
 			] },
 			{ name: 'ADVANCED', items: [
 				{ key: 'eaglerPerformanceCounters', label: 'Show FPS & TPS', type: BOOL, impact: 'None', desc: 'The game\'s own counters in the corner.' },
